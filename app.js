@@ -2,7 +2,10 @@
 // report which mountain-range polygons (OSM data) contain it.
 // No automatic refresh yet.
 
-const DATA_URL = "data/romania-mountain-ranges.geojson";
+const DATA_URLS = [
+  "data/romania-mountain-ranges.geojson",          // level 1: major ranges
+  "data/romania-mountain-subunits-level2.geojson", // level 2: subunits
+];
 
 const button = document.getElementById("locate");
 const statusEl = document.getElementById("status");
@@ -11,15 +14,18 @@ const resultEl = document.getElementById("result");
 
 let features = [];
 
-// Load polygons once. Failure is reported in the status line, not thrown.
-fetch(DATA_URL)
-  .then((response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  })
-  .then((geojson) => {
-    features = geojson.features || [];
-    statusEl.textContent = `Loaded ${features.length} range polygons. Press the button to read your location.`;
+// Load all polygon levels once. Failure is reported in the status line, not thrown.
+Promise.all(
+  DATA_URLS.map((url) =>
+    fetch(url).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+      return response.json();
+    })
+  )
+)
+  .then((collections) => {
+    features = collections.flatMap((c) => c.features || []);
+    statusEl.textContent = `Loaded ${features.length} polygons. Press the button to read your location.`;
   })
   .catch((err) => {
     statusEl.textContent = `Could not load polygons: ${err.message}`;
@@ -55,7 +61,11 @@ function describe(lat, lon, accuracy) {
   if (hits.length === 0) {
     resultEl.textContent = "Not inside any loaded mountain-range polygon.";
   } else {
-    resultEl.textContent = "Inside: " + hits.map((f) => f.properties.name).join(", ");
+    // Show each hit with its OSM name language. Names without a Romanian or English
+    // tag are shown in their inferred language, e.g. "Busov (sk)".
+    resultEl.textContent =
+      "Inside: " +
+      hits.map((f) => `${f.properties.display_name} (${f.properties.display_lang})`).join(", ");
   }
 }
 
