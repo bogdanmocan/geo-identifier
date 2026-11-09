@@ -90,6 +90,68 @@ function describe(lat, lon, accuracy) {
   }
 }
 
+// ---- Google (Maps JavaScript API Geocoder) -------------------------------
+// The Geocoding web service has no CORS support, so reverse geocoding runs
+// through the Maps JavaScript API, which browsers can call. Set the key below
+// after creating it in Google Cloud Console, restricted to the Pages origin
+// (https://bogdanmocan.github.io/*) and to the Geocoding API only.
+// Leave empty to disable this feature.
+const GOOGLE_API_KEY = "";
+
+const placeEl = document.createElement("p");
+placeEl.id = "place";
+resultEl.insertAdjacentElement("afterend", placeEl);
+
+let localityMap = [];
+fetch("data/localities-to-regions.json")
+  .then((r) => (r.ok ? r.json() : { entries: [] }))
+  .then((j) => (localityMap = j.entries || []))
+  .catch(() => (localityMap = []));
+
+let googleReady = null;
+function loadGoogle() {
+  if (!GOOGLE_API_KEY) return Promise.reject(new Error("no Google API key set"));
+  if (googleReady) return googleReady;
+  googleReady = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GOOGLE_API_KEY)}&language=ro&loading=async&callback=__geoInit`;
+    window.__geoInit = () => resolve(window.google);
+    s.onerror = () => reject(new Error("Google Maps script failed to load"));
+    document.head.appendChild(s);
+  });
+  return googleReady;
+}
+
+function reverseGeocode(lat, lon) {
+  return loadGoogle().then(
+    (g) =>
+      new Promise((resolve, reject) => {
+        new g.maps.Geocoder().geocode({ location: { lat, lng: lon } }, (results, status) => {
+          if (status !== "OK" || !results.length) return reject(new Error(status));
+          resolve(results[0].address_components);
+        });
+      })
+  );
+}
+
+function component(parts, type) {
+  const c = parts.find((p) => p.types.includes(type));
+  return c ? c.long_name : null;
+}
+
+function showPlace(parts) {
+  const locality = component(parts, "locality") || component(parts, "administrative_area_level_3");
+  const county = component(parts, "administrative_area_level_1");
+  const match = localityMap.find((e) => e.locality === locality);
+  let text = `Place: ${locality || "unknown"}${county ? `, ${county}` : ""}`;
+  if (match) {
+    text += ` → region: ${match.region}${match.verify ? " (to verify)" : ""}`;
+  } else if (locality) {
+    text += " → no region mapped yet";
+  }
+  placeEl.textContent = text;
+}
+
 button.addEventListener("click", () => {
   if (!("geolocation" in navigator)) {
     statusEl.textContent = "Geolocation is not available in this browser.";
@@ -100,6 +162,13 @@ button.addEventListener("click", () => {
     (pos) => {
       statusEl.textContent = "Location received.";
       describe(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+      if (GOOGLE_API_KEY) {
+        reverseGeocode(pos.coords.latitude, pos.coords.longitude)
+          .then(showPlace)
+          .catch((err) => (placeEl.textContent = `Place lookup failed: ${err.message}`));
+      } else {
+        placeEl.textContent = "Place lookup disabled (no Google API key set).";
+      }
     },
     (err) => {
       statusEl.textContent = `Location error: ${err.message}`;

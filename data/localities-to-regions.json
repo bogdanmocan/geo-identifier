@@ -1,0 +1,7 @@
+{
+  "_comment": "Manual mapping from locality (as returned by Google Geocoding) to geographic region. Entries marked verify=true are not yet checked against a reference map. Add rows as needed.",
+  "entries": [
+    { "locality": "Baia Mare", "county": "Maramureș", "region": "Depresiunea Baia Mare", "verify": false },
+    { "locality": "Oradea", "county": "Bihor", "region": "Câmpia de Vest", "verify": true }
+  ]
+}
