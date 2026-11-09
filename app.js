@@ -2,9 +2,10 @@
 // report which mountain-range polygons (OSM data) contain it.
 // No automatic refresh yet.
 
-const DATA_URLS = [
-  "data/romania-mountain-ranges.geojson",          // level 1: major ranges
-  "data/romania-mountain-subunits-level2.geojson", // level 2: subunits
+const LEVELS = [
+  { label: "Level 1 (range)", url: "data/romania-mountain-ranges.geojson" },
+  { label: "Level 2 (subunit)", url: "data/romania-mountain-subunits-level2.geojson" },
+  { label: "Level 3 (protected massif)", url: "data/romania-protected-massifs-level3.geojson" },
 ];
 
 const button = document.getElementById("locate");
@@ -16,15 +17,21 @@ let features = [];
 
 // Load all polygon levels once. Failure is reported in the status line, not thrown.
 Promise.all(
-  DATA_URLS.map((url) =>
-    fetch(url).then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+  LEVELS.map((level) =>
+    fetch(level.url).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status} for ${level.url}`);
       return response.json();
     })
   )
 )
   .then((collections) => {
-    features = collections.flatMap((c) => c.features || []);
+    // Tag each feature with its level label so results can be grouped.
+    features = collections.flatMap((c, i) =>
+      (c.features || []).map((f) => {
+        f.properties.level_label = LEVELS[i].label;
+        return f;
+      })
+    );
     statusEl.textContent = `Loaded ${features.length} polygons. Press the button to read your location.`;
   })
   .catch((err) => {
@@ -58,14 +65,28 @@ function describe(lat, lon, accuracy) {
     `Lat ${lat.toFixed(5)}, Lon ${lon.toFixed(5)} (accuracy ±${Math.round(accuracy)} m)`;
 
   const hits = features.filter((f) => featureContains(f, lon, lat));
+  // Clear previous output, then list hits grouped by level.
+  resultEl.replaceChildren();
   if (hits.length === 0) {
-    resultEl.textContent = "Not inside any loaded mountain-range polygon.";
-  } else {
-    // Show each hit with its OSM name language. Names without a Romanian or English
-    // tag are shown in their inferred language, e.g. "Busov (sk)".
-    resultEl.textContent =
-      "Inside: " +
-      hits.map((f) => `${f.properties.display_name} (${f.properties.display_lang})`).join(", ");
+    resultEl.textContent = "Not inside any loaded polygon.";
+    return;
+  }
+  for (const level of LEVELS) {
+    const inLevel = hits.filter((f) => f.properties.level_label === level.label);
+    const line = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = level.label + ": ";
+    line.appendChild(title);
+    // Show each name with its language. Names without a Romanian or English
+    // tag are shown with their inferred language, e.g. "Busov (sk)".
+    line.appendChild(
+      document.createTextNode(
+        inLevel.length
+          ? inLevel.map((f) => `${f.properties.display_name} (${f.properties.display_lang})`).join(", ")
+          : "none"
+      )
+    );
+    resultEl.appendChild(line);
   }
 }
 
